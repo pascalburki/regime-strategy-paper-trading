@@ -1,0 +1,32 @@
+name: run-strategy
+
+on:
+  schedule:
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:            
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - run: python run_strategy.py
+        env:
+          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+
+     
+      - name: Commit updated log
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add strategy_log.csv
+          git diff --staged --quiet || git commit -m "Update strategy log $(date +'%Y-%m-%d')"
+          git push
