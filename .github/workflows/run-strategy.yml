@@ -3,7 +3,10 @@ name: run-strategy
 on:
   schedule:
     - cron: '30 21 * * 1-5'
-  workflow_dispatch:            
+  workflow_dispatch:           
+
+permissions:
+  contents: write  
 
 jobs:
   run:
@@ -22,7 +25,7 @@ jobs:
           ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
           ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
 
-     
+      
       - name: Commit updated log
         run: |
           git config --global user.name "github-actions"
