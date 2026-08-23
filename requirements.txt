@@ -1,0 +1,6 @@
+alpaca-py
+yfinance
+numpy
+pandas
+hmmlearn
+streamlit
