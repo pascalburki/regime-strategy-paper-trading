@@ -37,7 +37,33 @@ col2.metric("Target Exposure", f"{latest['target_exposure']}x")
 col3.metric("Account Equity", f"${latest['equity']:,.2f}")
 
 st.subheader("Equity Over Time")
-st.line_chart(log.set_index("date")["equity"])
+
+try:
+    shadow_4asset = pd.read_csv("shadow_4asset_log.csv", parse_dates=["date"])
+except FileNotFoundError:
+    shadow_4asset = None
+
+try:
+    shadow_buyhold = pd.read_csv("shadow_buyhold_log.csv", parse_dates=["date"])
+except FileNotFoundError:
+    shadow_buyhold = None
+
+series = {"5-asset (real, live)": log.set_index("date")["equity"]}
+missing = []
+
+if shadow_4asset is not None and len(shadow_4asset) > 0:
+    series["4-asset (shadow, simulated)"] = shadow_4asset.set_index("date")["equity"]
+else:
+    missing.append("4-asset shadow")
+
+if shadow_buyhold is not None and len(shadow_buyhold) > 0:
+    series["Buy & Hold (shadow, no timing)"] = shadow_buyhold.set_index("date")["equity"]
+else:
+    missing.append("buy-and-hold shadow")
+
+st.line_chart(pd.DataFrame(series))
+if missing:
+    st.caption(f"Still waiting on data for: {', '.join(missing)}.")
 
 st.subheader("Regime History")
 st.dataframe(log[["date", "regime", "target_exposure", "action"]].sort_values("date", ascending=False), use_container_width=True)
