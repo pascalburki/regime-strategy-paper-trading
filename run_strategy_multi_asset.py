@@ -28,6 +28,16 @@ Aug 26, which is pure noise, not a meaningful rebalance. This band doesn't
 change the validated regime signal or exposure logic at all, just cuts
 noise trades around it.
 
+STOP LOSS (added Aug 26 2026): each position closes if it's down more than
+STOP_LOSS_PCT from its average entry price, regardless of what the regime
+signal says. HONEST LIMITATION: this script runs once a day (scheduled
+workflow), not continuously -- so this is a once-per-day check, not a true
+intraday stop. It won't catch a flash crash and recover before the next
+run; a real intraday stop would need a process running 24/7, not a daily
+cron job. What it does do: prevents holding a badly losing position all
+the way to the next regime classification, which previously had zero
+downside protection below the portfolio level.
+
 SETUP: pip install alpaca-py yfinance numpy pandas hmmlearn --break-system-packages
 Requires ALPACA_KEY and ALPACA_SECRET as environment variables.
 """
@@ -55,6 +65,7 @@ regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "strategy_log.csv"
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 REBALANCE_BAND = 0.03  # only trade if a position drifts more than 3% off target -- avoids noise trades on tiny daily price moves
+STOP_LOSS_PCT = 0.08    # close a position if it's down more than 8% from its average entry price, regardless of regime
 
 
 def run_walkforward(df_clean, start_date):
@@ -179,6 +190,38 @@ def increase_position(trading_client, symbol, gap):
     return action
 
 
+def check_stop_losses(trading_client):
+    """Close any position down more than STOP_LOSS_PCT from its average entry
+    price. Runs before the regime-based rebalance so a stopped-out position
+    isn't immediately bought back in the same run -- that decision waits for
+    tomorrow's fresh regime check instead.
+    Returns the set of symbols stopped out this run.
+    """
+    stopped_out = set()
+    for symbol in ASSETS:
+        try:
+            position = trading_client.get_open_position(symbol)
+        except Exception:
+            continue
+
+        entry_price = float(position.avg_entry_price)
+        current_price = float(position.current_price)
+        pct_change = (current_price - entry_price) / entry_price
+
+        if pct_change < -STOP_LOSS_PCT:
+            print(f"STOP LOSS TRIGGERED: {symbol} is {pct_change:.1%} from entry (${entry_price:.2f} -> ${current_price:.2f})")
+            if not DRY_RUN:
+                if has_open_order(trading_client, symbol):
+                    print(f"  {symbol} already has a pending order -- skipping stop-loss close this run, will retry next run.")
+                    continue
+                trading_client.close_position(symbol_or_asset_id=symbol)
+                print(f"  Closed {symbol} entirely.")
+            else:
+                print(f"  [DRY RUN] would close {symbol} entirely.")
+            stopped_out.add(symbol)
+    return stopped_out
+
+
 def log_result(date, regime, exposure_pct, actions_summary, equity, total_before, total_target):
     file_exists = os.path.isfile(LOG_FILE)
     with open(LOG_FILE, "a", newline="") as f:
@@ -204,6 +247,13 @@ def main():
     regime_label = regime_names.get(current_state, "unknown")
     target_exposure = exposure.get(current_state, 1.0)
     print(f"Date: {current_date.date()}, Regime: {regime_label}, Target exposure: {target_exposure}x\n")
+
+    print("Checking stop losses...")
+    stopped_out = check_stop_losses(trading_client)
+    if stopped_out:
+        print(f"Stopped out this run: {', '.join(stopped_out)} -- will not re-buy until tomorrow's regime check.\n")
+    else:
+        print("No positions breached the stop loss.\n")
 
     account = trading_client.get_account()
     equity = float(account.equity)
@@ -231,6 +281,8 @@ def main():
     # Phase 1: reductions first (deleveraging, not blocked by buying-power checks)
     print("--- Phase 1: reducing oversized positions ---")
     for symbol, (gap, current_value) in gaps.items():
+        if symbol in stopped_out:
+            continue  # already handled by the stop loss this run
         if gap < -band_usd:  # needs to shrink, beyond the band
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate. Wait for it to settle.")
@@ -256,6 +308,9 @@ def main():
 
     print("\n--- Phase 2: buying into underweight positions ---")
     for symbol, (gap, current_value) in gaps.items():
+        if symbol in stopped_out:
+            print(f"{symbol}: skipping buy -- stopped out this run, waiting for tomorrow's regime check.")
+            continue
         if gap > band_usd:  # needs to grow, beyond the band
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate.")
