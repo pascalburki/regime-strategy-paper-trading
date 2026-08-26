@@ -21,6 +21,13 @@ without touching the account:
 Only unset DRY_RUN once you've confirmed the preview looks right and you're
 ready for it to actually trade.
 
+REBALANCING BAND (added Aug 26 2026): only trades a position if it's drifted
+more than 3% off target. Before this, the script chased every tiny daily
+price move -- e.g. a real observed trade of "buy $23.08 notional SPY" on
+Aug 26, which is pure noise, not a meaningful rebalance. This band doesn't
+change the validated regime signal or exposure logic at all, just cuts
+noise trades around it.
+
 SETUP: pip install alpaca-py yfinance numpy pandas hmmlearn --break-system-packages
 Requires ALPACA_KEY and ALPACA_SECRET as environment variables.
 """
@@ -47,6 +54,7 @@ exposure = {0: 1.2, 1: 1.0, 2: 0.0}
 regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "strategy_log.csv"
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+REBALANCE_BAND = 0.03  # only trade if a position drifts more than 3% off target -- avoids noise trades on tiny daily price moves
 
 
 def run_walkforward(df_clean, start_date):
@@ -209,19 +217,29 @@ def main():
         gap, current_value = get_gap(trading_client, symbol, per_asset_target)
         gaps[symbol] = (gap, current_value)
 
+    # Rebalancing band: only act on gaps bigger than REBALANCE_BAND (3%) of
+    # target. Without this, the script chases tiny daily price drift with
+    # trades like "buy $23.08 notional SPY" -- real observed behavior on
+    # Aug 26 -- which is just noise, not a meaningful rebalance.
+    band_usd = per_asset_target * REBALANCE_BAND
+    print(f"Rebalancing band: +/-${band_usd:,.2f} ({REBALANCE_BAND:.0%} of target) -- smaller drifts are skipped\n")
+
     actions = []
+    skipped = []
     total_before = sum(v for _, v in gaps.values())
 
     # Phase 1: reductions first (deleveraging, not blocked by buying-power checks)
     print("--- Phase 1: reducing oversized positions ---")
     for symbol, (gap, current_value) in gaps.items():
-        if gap < -1:  # needs to shrink
+        if gap < -band_usd:  # needs to shrink, beyond the band
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate. Wait for it to settle.")
                 continue
             action = reduce_position(trading_client, symbol, current_value, per_asset_target)
             print(f"{symbol}: {action}")
             actions.append(action)
+        elif gap < 0:
+            skipped.append(f"{symbol} (${-gap:,.2f} under, within band)")
 
     # Phase 2: re-check real buying power before attempting any buys
     if not DRY_RUN:
@@ -238,13 +256,18 @@ def main():
 
     print("\n--- Phase 2: buying into underweight positions ---")
     for symbol, (gap, current_value) in gaps.items():
-        if gap > 1:  # needs to grow
+        if gap > band_usd:  # needs to grow, beyond the band
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate.")
                 continue
             action = increase_position(trading_client, symbol, gap)
             print(f"{symbol}: {action}")
             actions.append(action)
+        elif gap > 0:
+            skipped.append(f"{symbol} (${gap:,.2f} over, within band)")
+
+    if skipped:
+        print(f"\nSkipped (within {REBALANCE_BAND:.0%} band, not worth trading): {'; '.join(skipped)}")
 
     total_target = per_asset_target * len(ASSETS)
     actions_summary = "; ".join(actions)
