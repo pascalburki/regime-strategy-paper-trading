@@ -93,6 +93,65 @@ st.altair_chart((lines + points).properties(height=420).interactive(), use_conta
 if missing:
     st.caption(f"Still waiting on data for: {', '.join(missing)}.")
 
+# ============================================================
+# Performance Calculator
+# ============================================================
+st.subheader("Performance Calculator")
+st.caption("Since-inception return for each strategy. All three start from a $100,000 baseline, so this is a true apples-to-apples comparison.")
+
+STARTING_EQUITY = 100000.0
+
+def pct_return(current_equity):
+    return (current_equity - STARTING_EQUITY) / STARTING_EQUITY * 100
+
+perf_rows = []
+
+real_latest_equity = real_clean.sort_values("date")["equity"].iloc[-1]
+perf_rows.append({
+    "Strategy": "5-asset (real, live)",
+    "Current Equity": real_latest_equity,
+    "Return (%)": pct_return(real_latest_equity),
+})
+
+if shadow_4asset is not None and len(shadow_4asset) > 0:
+    s4_latest = shadow_4asset.drop_duplicates(subset="date", keep="last").sort_values("date")["equity"].iloc[-1]
+    perf_rows.append({
+        "Strategy": "4-asset (shadow)",
+        "Current Equity": s4_latest,
+        "Return (%)": pct_return(s4_latest),
+    })
+
+if shadow_buyhold is not None and len(shadow_buyhold) > 0:
+    sbh_latest = shadow_buyhold.drop_duplicates(subset="date", keep="last").sort_values("date")["equity"].iloc[-1]
+    perf_rows.append({
+        "Strategy": "Buy & Hold (shadow)",
+        "Current Equity": sbh_latest,
+        "Return (%)": pct_return(sbh_latest),
+    })
+
+perf_df = pd.DataFrame(perf_rows).sort_values("Return (%)", ascending=False).reset_index(drop=True)
+perf_df.insert(0, "Rank", [f"#{i+1}" for i in range(len(perf_df))])
+
+perf_cols = st.columns(len(perf_df))
+for col, (_, row) in zip(perf_cols, perf_df.iterrows()):
+    col.metric(
+        row["Strategy"],
+        f"${row['Current Equity']:,.2f}",
+        f"{row['Return (%)']:+.3f}%",
+    )
+
+with st.expander("Full comparison table"):
+    display_df = perf_df.copy()
+    display_df["Current Equity"] = display_df["Current Equity"].apply(lambda x: f"${x:,.2f}")
+    display_df["Return (%)"] = display_df["Return (%)"].apply(lambda x: f"{x:+.4f}%")
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+if len(perf_df) > 1:
+    leader = perf_df.iloc[0]
+    laggard = perf_df.iloc[-1]
+    gap = leader["Return (%)"] - laggard["Return (%)"]
+    st.caption(f"Currently leading: **{leader['Strategy']}** by {gap:.3f} percentage points over {laggard['Strategy']}. Early days — this gap will move around a lot until more history builds up.")
+
 st.subheader("Regime History")
 st.dataframe(log[["date", "regime", "target_exposure", "action"]].sort_values("date", ascending=False), use_container_width=True)
 
