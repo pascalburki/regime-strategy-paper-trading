@@ -48,16 +48,16 @@ try:
 except FileNotFoundError:
     shadow_buyhold = None
 
-series = {"5-asset (real, live)": log.set_index("date")["equity"]}
+series = {"5-asset (real, live)": log.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]}
 missing = []
 
 if shadow_4asset is not None and len(shadow_4asset) > 0:
-    series["4-asset (shadow, simulated)"] = shadow_4asset.set_index("date")["equity"]
+    series["4-asset (shadow, simulated)"] = shadow_4asset.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]
 else:
     missing.append("4-asset shadow")
 
 if shadow_buyhold is not None and len(shadow_buyhold) > 0:
-    series["Buy & Hold (shadow, no timing)"] = shadow_buyhold.set_index("date")["equity"]
+    series["Buy & Hold (shadow, no timing)"] = shadow_buyhold.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]
 else:
     missing.append("buy-and-hold shadow")
 
