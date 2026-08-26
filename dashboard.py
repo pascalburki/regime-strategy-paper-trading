@@ -36,6 +36,8 @@ col1.metric("Current Regime", latest["regime"].capitalize())
 col2.metric("Target Exposure", f"{latest['target_exposure']}x")
 col3.metric("Account Equity", f"${latest['equity']:,.2f}")
 
+import altair as alt
+
 st.subheader("Equity Over Time")
 
 try:
@@ -48,20 +50,46 @@ try:
 except FileNotFoundError:
     shadow_buyhold = None
 
-series = {"5-asset (real, live)": log.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]}
-missing = []
+frames = []
+real_clean = log.drop_duplicates(subset="date", keep="last")[["date", "equity"]].copy()
+real_clean["Series"] = "5-asset (real, live)"
+frames.append(real_clean)
 
+missing = []
 if shadow_4asset is not None and len(shadow_4asset) > 0:
-    series["4-asset (shadow, simulated)"] = shadow_4asset.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]
+    s4 = shadow_4asset.drop_duplicates(subset="date", keep="last")[["date", "equity"]].copy()
+    s4["Series"] = "4-asset (shadow, simulated)"
+    frames.append(s4)
 else:
     missing.append("4-asset shadow")
 
 if shadow_buyhold is not None and len(shadow_buyhold) > 0:
-    series["Buy & Hold (shadow, no timing)"] = shadow_buyhold.drop_duplicates(subset="date", keep="last").set_index("date")["equity"]
+    sbh = shadow_buyhold.drop_duplicates(subset="date", keep="last")[["date", "equity"]].copy()
+    sbh["Series"] = "Buy & Hold (shadow, no timing)"
+    frames.append(sbh)
 else:
     missing.append("buy-and-hold shadow")
 
-st.line_chart(pd.DataFrame(series))
+chart_df = pd.concat(frames, ignore_index=True)
+total_days = chart_df["date"].nunique()
+
+if total_days < 5:
+    st.info(
+        f"Only {total_days} trading day(s) of data so far — the chart will look sparse until more "
+        "history builds up. Each series gets one new point per weekday close; check back in a "
+        "couple of weeks for a readable trend."
+    )
+
+base = alt.Chart(chart_df).encode(
+    x=alt.X("date:T", title="Date"),
+    y=alt.Y("equity:Q", title="Equity (USD)", scale=alt.Scale(zero=False), axis=alt.Axis(format="$,.0f")),
+    color=alt.Color("Series:N", title=None, legend=alt.Legend(orient="bottom")),
+    tooltip=[alt.Tooltip("date:T", title="Date"), alt.Tooltip("Series:N"), alt.Tooltip("equity:Q", title="Equity", format="$,.2f")],
+)
+lines = base.mark_line(strokeWidth=2.5)
+points = base.mark_circle(size=70)
+st.altair_chart((lines + points).properties(height=420).interactive(), use_container_width=True)
+
 if missing:
     st.caption(f"Still waiting on data for: {', '.join(missing)}.")
 

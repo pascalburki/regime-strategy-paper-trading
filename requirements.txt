@@ -4,3 +4,4 @@ numpy
 pandas
 hmmlearn
 streamlit
+altair

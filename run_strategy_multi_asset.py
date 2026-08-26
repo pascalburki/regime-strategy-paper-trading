@@ -232,7 +232,7 @@ def main():
             print("Buying power is still $0 -- reductions likely haven't settled yet.")
             print("Stopping here. Re-run this script in a few minutes once the sale settles,")
             print("it will skip the completed reduction and proceed straight to the buys.")
-            log_result(current_date.date(), regime_label, target_exposure, "; ".join(actions), equity, total_before, per_asset_target * len(ASSETS))
+            log_result(datetime.date.today(), regime_label, target_exposure, "; ".join(actions), equity, total_before, per_asset_target * len(ASSETS))
             print(f"\nLogged partial progress to {LOG_FILE}")
             return
 
@@ -250,7 +250,7 @@ def main():
     actions_summary = "; ".join(actions)
 
     if not DRY_RUN:
-        log_result(current_date.date(), regime_label, target_exposure, actions_summary, equity, total_before, total_target)
+        log_result(datetime.date.today(), regime_label, target_exposure, actions_summary, equity, total_before, total_target)
         print(f"\nLogged to {LOG_FILE}")
     else:
         print("\n[DRY RUN] Nothing logged, nothing traded.")
