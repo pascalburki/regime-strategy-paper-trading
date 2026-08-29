@@ -108,7 +108,7 @@ def get_todays_portfolio_return():
         df = yf.download(symbol, start=start, end=end)
         df.columns = df.columns.get_level_values(0)
         close = df["Close"]
-        pct_change = close.pct_change().dropna()
+        pct_change = close.pct_change(fill_method=None).dropna()
         daily_returns.append(pct_change.iloc[-1])
 
     return float(np.mean(daily_returns))
@@ -151,7 +151,7 @@ def main():
     print(f"Previous equity: ${previous_equity:,.2f}")
     print(f"New equity: ${new_equity:,.2f}")
 
-    log_result(current_date.date(), regime_label, target_exposure, daily_return, new_equity)
+    log_result(datetime.date.today(), regime_label, target_exposure, daily_return, new_equity)
     print(f"\nLogged to {LOG_FILE}")
 
 
