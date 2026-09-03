@@ -9,3 +9,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-09-01,calm,1.2,,99652.88,120534.927233,119583.456
 2026-09-01,calm,1.2,"close 4.41% of XOM ($24,864.80 -> target $23,767.12)",99029.67,119911.728133,118835.60399999999
 2026-09-02,moderate,1.0,"close 17.74% of SPY ($24,162.80 -> target $19,877.16); close 17.60% of QQQ ($24,122.36 -> target $19,877.16); close 15.16% of GLD ($23,428.47 -> target $19,877.16); close 16.33% of TLT ($23,757.55 -> target $19,877.16); close 16.16% of XOM ($23,709.04 -> target $19,877.16)",99385.78,119180.229394,99385.78
+2026-09-03,calm,1.15,buy $2962.14 notional SPY; buy $2938.14 notional QQQ; buy $2750.29 notional GLD; buy $3103.19 notional TLT; buy $3385.22 notional XOM,100158.4,100043.175695,115182.15999999999
