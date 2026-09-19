@@ -81,6 +81,21 @@ STOP_LOSS_PCT = 0.08    # close a position if it's down more than 8% from its av
 DRAWDOWN_LOOKBACK_DAYS = 5
 DRAWDOWN_CAP_THRESHOLD_PCT = 0.01  # cap leverage if down more than 1% over the lookback window
 
+# DIRECTIONAL TREND FILTER (added Sep 19 2026): the drawdown circuit-breaker
+# above reacts to a decline AFTER it happens. This filter is the proactive
+# version of the same insight -- "calm" measures volatility, not direction.
+# Real live case: regime read "calm" on 18 of 19 trading days from Aug 24-
+# Sep 18 2026 while equity quietly drifted down ~1.2%, because calm alone
+# says nothing about calm-and-rising vs. calm-and-declining. Backtested
+# (see research/backtest_directional_filter.py): only capping "calm" to
+# 1.0x when SPY is also below its own 50-day moving average improved total
+# return (+345.23% vs. +322.47%) and Sharpe (1.23 vs. 1.17) with the SAME
+# max drawdown (-15.84% both) over the full walk-forward period -- a clean
+# improvement, not a tradeoff. Only "calm" changes; moderate/stress are
+# already cautious enough on their own. Affected roughly 15% of calm days
+# in the backtest.
+TREND_WINDOW = 50
+
 
 def run_walkforward(df_clean, start_date):
     """Same validated walk-forward logic as the original SPY-only script."""
@@ -124,7 +139,9 @@ def run_walkforward(df_clean, start_date):
 
 
 def get_current_regime():
-    """Fetch real SPY data and run the walk-forward HMM to get today's regime."""
+    """Fetch real SPY data, run the walk-forward HMM to get today's regime,
+    and also check today's directional trend (price vs. its own 50-day
+    moving average -- see TREND_WINDOW comment above for why)."""
     today = pd.Timestamp(datetime.date.today())
     df = yf.download(SIGNAL_SYMBOL, start=DATA_HISTORY_START, end=(today + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
     df.columns = df.columns.get_level_values(0)
@@ -141,7 +158,13 @@ def get_current_regime():
 
     current_state = regime_signal.iloc[-1]
     current_date = regime_signal.index[-1]
-    return current_state, current_date
+
+    # Trend check uses only past data up to today (a rolling average is
+    # naturally walk-forward safe -- no future leakage).
+    ma50 = close.rolling(window=TREND_WINDOW).mean()
+    is_above_trend = bool(close.loc[current_date] > ma50.loc[current_date])
+
+    return current_state, current_date, is_above_trend
 
 
 def has_open_order(trading_client, symbol):
@@ -281,10 +304,20 @@ def main():
         print("=== DRY RUN MODE -- no real orders will be submitted ===\n")
 
     print("Determining current regime from real SPY data...")
-    current_state, current_date = get_current_regime()
+    current_state, current_date, is_above_trend = get_current_regime()
     regime_label = regime_names.get(current_state, "unknown")
     target_exposure = exposure.get(current_state, 1.0)
-    print(f"Date: {current_date.date()}, Regime: {regime_label}, Target exposure: {target_exposure}x\n")
+
+    # Directional trend filter: only "calm" is ambiguous about direction,
+    # so only "calm" gets capped here. See TREND_WINDOW comment above.
+    if current_state == 0 and not is_above_trend:
+        print(f"TREND FILTER: regime is 'calm' but SPY is below its {TREND_WINDOW}-day average "
+              f"(calm-but-declining) -- capping exposure at 1.0x instead of {target_exposure}x.\n")
+        target_exposure = 1.0
+    else:
+        trend_desc = "above" if is_above_trend else "below"
+        print(f"Date: {current_date.date()}, Regime: {regime_label} (SPY {trend_desc} its {TREND_WINDOW}-day average), "
+              f"Target exposure: {target_exposure}x\n")
 
     print("Checking stop losses...")
     stopped_out = check_stop_losses(trading_client)
