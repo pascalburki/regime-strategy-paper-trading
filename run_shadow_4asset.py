@@ -97,21 +97,46 @@ def get_current_regime():
     return current_state, current_date
 
 
-def get_todays_portfolio_return():
-    """Equal-weighted daily simple return across the 4 assets, most recent close-to-close."""
+def get_latest_trading_day_return():
+    """Equal-weighted close-to-close return for the most recent TRADING day in
+    the downloaded data, together with that day's date taken from the price
+    index -- never from the calendar.
+
+    FIX (2026-10-03): the old version took the latest available return and
+    labelled it with today's calendar date. Any run on a weekend, on a market
+    holiday, or a second run on the same day re-applied the same return and
+    compounded it into the equity curve (e.g. 2026-09-07, Labor Day, repeated
+    Friday's -0.51%; 2026-09-26, a Saturday, repeated Thursday's -0.23%).
+    """
     today = pd.Timestamp(datetime.date.today())
     start = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
     end = (today + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
 
-    daily_returns = []
+    pieces = []
     for symbol in ASSETS:
         df = yf.download(symbol, start=start, end=end)
         df.columns = df.columns.get_level_values(0)
-        close = df["Close"]
-        pct_change = close.pct_change(fill_method=None).dropna()
-        daily_returns.append(pct_change.iloc[-1])
+        pieces.append(df["Close"].pct_change(fill_method=None).rename(symbol))
+    rets = pd.concat(pieces, axis=1).dropna()      # only days every asset traded
+    return rets.index[-1].date(), float(rets.iloc[-1].mean())
 
-    return float(np.mean(daily_returns))
+
+def already_logged(trading_date):
+    """True if this trading day is already in the log (repeat run, weekend, holiday)."""
+    if not os.path.isfile(LOG_FILE):
+        return False
+    df = pd.read_csv(LOG_FILE)
+    return len(df) > 0 and str(trading_date) in set(df["date"].astype(str))
+
+
+def load_previous_exposure():
+    """Exposure decided at the PREVIOUS close. Today's return is earned by that
+    exposure, not by the one decided tonight (same-day application would
+    flatter the tracker). Defaults to 1.0x on the first run."""
+    if not os.path.isfile(LOG_FILE):
+        return 1.0
+    df = pd.read_csv(LOG_FILE)
+    return float(df.iloc[-1]["target_exposure"]) if len(df) > 0 else 1.0
 
 
 def load_previous_equity():
@@ -141,17 +166,23 @@ def main():
     target_exposure = exposure.get(current_state, 1.0)
     print(f"Date: {current_date.date()}, Regime: {regime_label}, Target exposure: {target_exposure}x")
 
-    print("Fetching today's actual portfolio return across SPY, QQQ, GLD, XOM...")
-    daily_return = get_todays_portfolio_return()
+    print("Fetching the latest trading day's portfolio return across SPY, QQQ, GLD, XOM...")
+    trading_date, daily_return = get_latest_trading_day_return()
+    print(f"Latest trading day: {trading_date}")
+    if already_logged(trading_date):
+        print(f"{trading_date} is already logged -- nothing to do "
+              "(weekend, holiday, or a repeat run).")
+        return
     print(f"Equal-weighted daily return: {daily_return:.5f}")
 
     previous_equity = load_previous_equity()
-    new_equity = previous_equity * (1 + target_exposure * daily_return)
+    applied_exposure = load_previous_exposure()      # decided last close, earns today's return
+    new_equity = previous_equity * (1 + applied_exposure * daily_return)
 
     print(f"Previous equity: ${previous_equity:,.2f}")
     print(f"New equity: ${new_equity:,.2f}")
 
-    log_result(datetime.date.today(), regime_label, target_exposure, daily_return, new_equity)
+    log_result(trading_date, regime_label, target_exposure, daily_return, new_equity)
     print(f"\nLogged to {LOG_FILE}")
 
 
