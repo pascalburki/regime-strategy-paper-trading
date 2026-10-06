@@ -32,4 +32,10 @@ jobs:
           git config --global user.email "actions@github.com"
           git add shadow_buyhold_log.csv
           git diff --staged --quiet || git commit -m "Update buy-and-hold shadow log $(date +'%Y-%m-%d')"
-          git push
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && exit 0
+            echo "Push attempt $i failed, retrying..."
+            sleep $((RANDOM % 10 + 5))
+          done
+          echo "Push failed after 5 attempts"
+          exit 1
