@@ -43,3 +43,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-10-20,calm,1.0,,99664.6,99624.66538699999,99664.6
 2026-10-21,calm,1.0,,99829.55,99789.926334,99829.55
 2026-10-22,calm,1.15,buy $2868.80 notional SPY; buy $2742.03 notional QQQ; buy $3286.52 notional GLD; buy $2991.52 notional TLT; buy $3162.51 notional XOM,100078.37,100038.75259299998,115090.12549999998
+2026-10-23,calm,1.15,,99171.3,114183.006209,114046.995
