@@ -55,3 +55,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-11-05,moderate,1.0,"close 3.76% of GLD ($20,373.81 -> target $19,607.21); buy $1177.55 notional XOM",98036.05,98046.026953,98036.04999999999
 2026-11-06,moderate,1.0,,95502.08,95921.11845899999,95502.08
 2026-11-07,moderate,1.0,buy $19165.96 notional QQQ,95829.8,77349.989149,95829.79999999999
+2026-11-10,moderate,1.0,,96687.5,97374.044421,96687.5
