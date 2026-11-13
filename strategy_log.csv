@@ -58,3 +58,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-11-10,moderate,1.0,,96687.5,97374.044421,96687.5
 2026-11-11,moderate,1.0,,96082.44,96768.987566,96082.44
 2026-11-12,moderate,1.0,,96657.36,97343.91456399999,96657.36000000002
+2026-11-13,moderate,1.0,"close 3.58% of QQQ ($20,022.08 -> target $19,304.73); buy $668.16 notional GLD",96523.65,97210.1961,96523.65
