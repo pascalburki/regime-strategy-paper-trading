@@ -24,17 +24,10 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 import datetime
 import csv
 
-# ============================================================
-# CONFIG
-# ============================================================
 SYMBOL = "SPY"
 WALKFORWARD_HMM_START = pd.Timestamp('2015-01-01')
 DATA_HISTORY_START = '2010-01-01'
 exposure = {0: 1.2, 1: 1.0, 2: 0.0}
-# NOTE: 1.2x amplifies downside too — a 2% SPY drop becomes roughly a 2.4%
-# equity drop while in the "calm" regime. Confirm this is a risk level you've
-# deliberately chosen for this exposure level, not just a number that felt
-# reasonable in isolation.
 regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "strategy_log.csv"
 
@@ -122,17 +115,17 @@ def rebalance_to_target(trading_client, target_exposure_pct):
         position = trading_client.get_open_position(SYMBOL)
         current_value = float(position.market_value)
     except Exception:
-        current_value = 0.0  # no current position
+        current_value = 0.0
 
     gap = target_value - current_value
 
-    if abs(gap) < 1:  # skip dust-sized trades
+    if abs(gap) < 1:
         return "no change needed", equity, current_value, target_value
 
     side = OrderSide.BUY if gap > 0 else OrderSide.SELL
     order_request = MarketOrderRequest(
         symbol=SYMBOL,
-        notional=round(abs(gap), 2),  # dollar amount, not share count
+        notional=round(abs(gap), 2),
         side=side,
         time_in_force=TimeInForce.DAY,
     )

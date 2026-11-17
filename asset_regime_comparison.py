@@ -102,17 +102,14 @@ def main():
         print(f"  Running {symbol}...")
         regimes[symbol] = get_regime_series(symbol)
 
-    # Align all 5 on shared dates
     combined = pd.DataFrame(regimes).dropna()
     print(f"\nShared trading days across all 5 assets: {len(combined)}\n")
 
-    # How often does each asset's OWN regime differ from SPY's?
     print("=== Disagreement with SPY's regime (the signal currently driving all 5) ===")
     for symbol in ["QQQ", "GLD", "TLT", "XOM"]:
         disagreement = (combined[symbol] != combined["SPY"]).mean()
         print(f"{symbol} disagrees with SPY's regime on {disagreement:.1%} of days")
 
-    # Visual: stacked regime timelines
     fig, axes = plt.subplots(5, 1, figsize=(14, 12), sharex=True)
     regime_names = {0: "calm", 1: "moderate", 2: "stress"}
     for ax, symbol in zip(axes, ASSETS):

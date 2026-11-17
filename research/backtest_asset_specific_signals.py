@@ -44,7 +44,7 @@ from hmmlearn.hmm import GaussianHMM
 ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]
 DATA_HISTORY_START = '2010-01-01'
 WALKFORWARD_HMM_START = pd.Timestamp('2015-01-01')
-EXPOSURE = {0: 1.15, 1: 1.0, 2: 0.0}  # calm, moderate, stress -- same as live strategy
+EXPOSURE = {0: 1.15, 1: 1.0, 2: 0.0}
 STARTING_EQUITY = 100000.0
 
 
@@ -147,25 +147,21 @@ def main():
         daily_returns[symbol] = ret
         regimes[symbol] = reg
 
-    # Shared dates across everything
     regime_df = pd.DataFrame(regimes).dropna()
     shared_dates = regime_df.index
     print(f"\nBacktesting over {len(shared_dates)} shared trading days\n")
 
-    # --- Approach A: CURRENT (SPY's regime drives all 5) ---
     spy_regime = regime_df["SPY"]
     exposures_current = {
         symbol: spy_regime.map(EXPOSURE) for symbol in ASSETS
     }
     curve_current = build_equity_curve(daily_returns, exposures_current, shared_dates)
 
-    # --- Approach B: ASSET-SPECIFIC (each asset's own regime) ---
     exposures_specific = {
         symbol: regime_df[symbol].map(EXPOSURE) for symbol in ASSETS
     }
     curve_specific = build_equity_curve(daily_returns, exposures_specific, shared_dates)
 
-    # --- Approach C: BUY & HOLD (always 1.0x, no timing) ---
     exposures_bh = {symbol: pd.Series(1.0, index=shared_dates) for symbol in ASSETS}
     curve_bh = build_equity_curve(daily_returns, exposures_bh, shared_dates)
 

@@ -115,9 +115,6 @@ def get_signal_data():
 
     regime = run_walkforward(df_clean, WALKFORWARD_HMM_START)
 
-    # Trend check: is price above or below its own 50-day moving average?
-    # This uses only past data at each point (T-49 through T), so it's
-    # automatically walk-forward safe -- no future leakage.
     ma50 = close.rolling(window=TREND_WINDOW).mean()
     trend_up = (close > ma50)
 
@@ -177,21 +174,18 @@ def main():
     regime = regime.loc[shared_dates]
     trend_up = trend_up.loc[shared_dates]
 
-    # --- CURRENT rule: pure regime, no trend consideration ---
     EXPOSURE = {0: 1.15, 1: 1.0, 2: 0.0}
     exposure_current = regime.map(EXPOSURE)
 
-    # --- NEW rule: calm gets capped to 1.0x if price is below its own trend ---
     exposure_new = []
     for date in shared_dates:
         r = regime[date]
-        if r == 0:  # calm
+        if r == 0:
             exposure_new.append(1.15 if trend_up[date] else 1.0)
         else:
             exposure_new.append(EXPOSURE[r])
     exposure_new = pd.Series(exposure_new, index=shared_dates)
 
-    # --- Buy & hold: always 1.0x ---
     exposure_bh = pd.Series(1.0, index=shared_dates)
 
     curve_current = build_equity_curve(daily_returns, exposure_current, shared_dates)
@@ -209,7 +203,6 @@ def main():
         print(f"  Max drawdown: {max_dd:.2%}")
         print()
 
-    # How often did the trend filter actually change anything?
     calm_days = (regime == 0).sum()
     calm_but_declining = ((regime == 0) & (~trend_up)).sum()
     print(f"Out of {calm_days} 'calm' days, {calm_but_declining} "

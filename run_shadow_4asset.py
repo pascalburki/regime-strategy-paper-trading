@@ -23,17 +23,14 @@ from hmmlearn.hmm import GaussianHMM
 import datetime
 import csv
 
-# ============================================================
-# CONFIG
-# ============================================================
 SIGNAL_SYMBOL = "SPY"
-ASSETS = ["SPY", "QQQ", "GLD", "XOM"]     # the 4-asset comparison portfolio, no TLT
+ASSETS = ["SPY", "QQQ", "GLD", "XOM"]
 WALKFORWARD_HMM_START = pd.Timestamp('2015-01-01')
 DATA_HISTORY_START = '2010-01-01'
 exposure = {0: 1.2, 1: 1.0, 2: 0.0}
 regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "shadow_4asset_log.csv"
-STARTING_EQUITY = 100000.0   # matches the real account's baseline
+STARTING_EQUITY = 100000.0
 
 
 def run_walkforward(df_clean, start_date):
@@ -117,7 +114,7 @@ def get_latest_trading_day_return():
         df = yf.download(symbol, start=start, end=end)
         df.columns = df.columns.get_level_values(0)
         pieces.append(df["Close"].pct_change(fill_method=None).rename(symbol))
-    rets = pd.concat(pieces, axis=1).dropna()      # only days every asset traded
+    rets = pd.concat(pieces, axis=1).dropna()
     return rets.index[-1].date(), float(rets.iloc[-1].mean())
 
 
@@ -176,7 +173,7 @@ def main():
     print(f"Equal-weighted daily return: {daily_return:.5f}")
 
     previous_equity = load_previous_equity()
-    applied_exposure = load_previous_exposure()      # decided last close, earns today's return
+    applied_exposure = load_previous_exposure()
     new_equity = previous_equity * (1 + applied_exposure * daily_return)
 
     print(f"Previous equity: ${previous_equity:,.2f}")

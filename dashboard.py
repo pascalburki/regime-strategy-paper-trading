@@ -14,7 +14,7 @@ st.title("Regime Strategy — Live Paper Trading")
 st.caption("HMM walk-forward exposure strategy on SPY, running on a real Alpaca paper account.")
 
 
-@st.cache_data(ttl=300)  # re-read the file every 5 minutes, don't cache forever
+@st.cache_data(ttl=300)
 def load_log():
     return pd.read_csv("strategy_log.csv", parse_dates=["date"])
 
@@ -93,9 +93,6 @@ st.altair_chart((lines + points).properties(height=420).interactive(), use_conta
 if missing:
     st.caption(f"Still waiting on data for: {', '.join(missing)}.")
 
-# ============================================================
-# Performance Calculator
-# ============================================================
 st.subheader("Performance Calculator")
 st.caption("Since-inception return for each strategy. All three start from a $100,000 baseline, so this is a true apples-to-apples comparison.")
 
@@ -155,7 +152,6 @@ if len(perf_df) > 1:
 st.subheader("Regime History")
 st.dataframe(log[["date", "regime", "target_exposure", "action"]].sort_values("date", ascending=False), use_container_width=True)
 
-# Simple drawdown calculation
 log["running_max"] = log["equity"].cummax()
 log["drawdown"] = (log["equity"] - log["running_max"]) / log["running_max"]
 st.subheader("Drawdown")

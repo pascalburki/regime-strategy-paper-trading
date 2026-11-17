@@ -62,7 +62,7 @@ logging.getLogger("hmmlearn").setLevel(logging.ERROR)
 
 SIGNAL = "SPY"
 ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]
-EXPOSURE = {0: 1.15, 1: 1.0, 2: 0.0}          # calm / moderate / stress
+EXPOSURE = {0: 1.15, 1: 1.0, 2: 0.0}
 TREND_WINDOW = 50
 DATA_START = "2010-01-01"
 BLOCKS = {
@@ -77,7 +77,6 @@ SCENARIOS = {
 }
 
 
-# ---------------------------------------------------------------- HMM ------
 def make_model():
     """Identical configuration to the live strategy."""
     m = GaussianHMM(n_components=3, covariance_type="diag", random_state=3,
@@ -123,11 +122,11 @@ def walkforward_regimes(feat, start):
             cur = nxt
             continue
         fits += 1
-        vol_order = np.argsort(model.means_[:, 1])            # states, calmest -> most volatile
+        vol_order = np.argsort(model.means_[:, 1])
         swaps += int(not np.array_equal(vol_order, [0, 1, 2]))
         start_max.append(float(model.startprob_.max()))
         rank = np.empty(3, dtype=int)
-        rank[vol_order] = np.arange(3)                         # state -> volatility rank
+        rank[vol_order] = np.arange(3)
         pos = feat.index.get_indexer(test.index)
         raw = {
             "smoothed": model.predict(test),
@@ -144,7 +143,6 @@ def walkforward_regimes(feat, start):
                     "startprob_max_median": float(np.median(start_max))}
 
 
-# ------------------------------------------------------------ exposures ----
 def exposures(regime, spy_close):
     """Pure regime exposure, and regime + trend filter (calm is capped to 1.0x
     when SPY is at or below its own 50-day average)."""
@@ -177,7 +175,6 @@ def stats(ret):
     }
 
 
-# ----------------------------------------------------------------- data ----
 def load_real_prices():
     import yfinance as yf
     px = yf.download(ASSETS, start=DATA_START, auto_adjust=True)["Close"]
@@ -201,7 +198,6 @@ def synthetic_prices(start="2011-01-03", end="2019-12-31", seed=1):
     return pd.DataFrame(cols, index=idx)
 
 
-# ------------------------------------------------------------------ main ----
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--synthetic", action="store_true", help="smoke test on fake data")
@@ -231,7 +227,7 @@ def main():
           f"(0 means the exposure map always hit the intended regime).")
     print("startprob_max_median near 1.0 means each month's decode is forced to start in one state.\n")
 
-    e = {k: exposures(L[k], spy) for k in L}                     # (regime-only, +trend)
+    e = {k: exposures(L[k], spy) for k in L}
     avg_exposure = e["causal"][0].reindex(idx).mean()
     print(f"Average regime-only exposure (live replica): {avg_exposure:.3f}x\n")
 

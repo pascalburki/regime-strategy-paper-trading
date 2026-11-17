@@ -19,9 +19,9 @@ import pandas as pd
 import datetime
 import csv
 
-ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]   # same universe as the real 5-asset strategy
+ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]
 LOG_FILE = "shadow_buyhold_log.csv"
-STARTING_EQUITY = 100000.0   # same baseline as the real account and other shadow tracker
+STARTING_EQUITY = 100000.0
 
 
 def get_latest_trading_day_return():
@@ -44,7 +44,7 @@ def get_latest_trading_day_return():
         df = yf.download(symbol, start=start, end=end)
         df.columns = df.columns.get_level_values(0)
         pieces.append(df["Close"].pct_change(fill_method=None).rename(symbol))
-    rets = pd.concat(pieces, axis=1).dropna()      # only days every asset traded
+    rets = pd.concat(pieces, axis=1).dropna()
     return rets.index[-1].date(), float(rets.iloc[-1].mean())
 
 
@@ -87,7 +87,7 @@ def main():
     print(f"Equal-weighted daily return: {daily_return:.5f}")
 
     previous_equity = load_previous_equity()
-    new_equity = previous_equity * (1 + daily_return)   # always 1.0x, no regime adjustment
+    new_equity = previous_equity * (1 + daily_return)
 
     print(f"Previous equity: ${previous_equity:,.2f}")
     print(f"New equity: ${new_equity:,.2f}")
