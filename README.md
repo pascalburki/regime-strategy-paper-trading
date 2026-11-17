@@ -8,11 +8,29 @@ A Gaussian HMM is fit on SPY's daily returns and its 20-day rolling volatility. 
 
 | Regime | Target exposure |
 |---|---|
-| Calm | 1.15x |
+| Calm | 1.0x |
 | Moderate | 1.0x |
 | Stress | 0x |
 
-That one SPY signal sets the exposure for an equal-weight portfolio of five assets: SPY, QQQ, GLD, TLT and XOM. The model is refit every month using past data only.
+That one SPY signal sets the exposure for an equal-weight portfolio of five assets: SPY, QQQ, GLD, TLT and XOM. The model is refit every month using past data only. Money that is not invested is held in T-bills (BIL).
+
+**Bonds only when they protect.** TLT is held only while its 63-day correlation with SPY is negative, meaning bonds are moving against stocks and act as a hedge. Otherwise its share goes to BIL.
+
+## Version 2 (Nov 17, 2026)
+
+Three changes, each tested before going live (`evaluate_honest.py`, `research/backtest_bonds_bil.py`):
+
+- **No leverage.** Calm exposure lowered from 1.15x to 1.0x. Leverage added only about +0.1% a year while lowering the Sharpe ratio.
+- **Bonds only when they protect.** A k-means study found that since 2021 stocks and bonds have mostly moved together, so TLT stopped hedging.
+- **T-bills instead of cash** when the strategy is out of the market.
+
+| 2015 to now, with costs | CAGR | Sharpe | Worst drawdown |
+|---|---|---|---|
+| Buy and hold, 5 ETFs | 11.2% | 0.960 | -22.2% |
+| Version 1 (1.0x) | 10.6% | 0.987 | -15.6% |
+| Version 2 | 10.9% | 1.030 | -14.1% |
+
+The bond rule improved the Sharpe ratio in all three test periods. A block bootstrap (5,000 paths) shows a gain above zero in 81.7% of paths: encouraging, but not statistically significant. Live results are compared from Nov 17, 2026. Logging was also fixed that day: the strategy log now uses the trading date, double runs are blocked, and each position's value is saved in `positions_log.csv`.
 
 Two extra rules can lower the exposure:
 

@@ -5,14 +5,16 @@ Extends the validated single-asset (SPY-only) version to an equal-weighted
 drive exposure across all 5 equally -- matching the originally validated
 approach (0.57 vs 0.44 return, 0.84 vs 0.69 Sharpe vs buy-and-hold).
 
-KNOWN TRADEOFF, kept deliberately for portfolio coherence: per-asset
-contribution analysis (Aug 25 2026) showed TLT as a real drag of -0.033
-within that +0.57 total, caused by a genuine multi-year bond bear market
-(2020-2023 rate hikes) that an equity-vol-based signal has no way to see.
-Every other asset (SPY, QQQ, GLD, XOM) contributed positively. TLT stays
-in for now rather than breaking from the validated 5-asset structure; a
-properly backtested, rate-aware TLT-specific signal remains a real future
-improvement, not something to build and deploy same-day.
+VERSION 2 (Nov 17 2026), each change backtested first in evaluate_honest.py
+and research/backtest_bonds_bil.py:
+  * No leverage: calm exposure is 1.0x (was 1.15x). Leverage added about
+    +0.1%/yr while lowering the Sharpe ratio.
+  * Bonds only when they protect: TLT is held only while its 63-day
+    correlation with SPY is negative. Otherwise its share goes to BIL.
+  * T-bills instead of cash: whatever is not invested is held in BIL.
+  Backtest 2015-now with costs: Sharpe 0.987 -> 1.030, worst drawdown
+  -15.6% -> -14.1%. Block bootstrap: gain above 0 in 81.7% of paths
+  (encouraging, not statistically significant).
 
 SAFETY: every run of this script submits REAL orders to your Alpaca paper
 account, including manual "Run workflow" triggers. Use DRY_RUN to preview
@@ -57,7 +59,11 @@ SIGNAL_SYMBOL = "SPY"
 ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]
 WALKFORWARD_HMM_START = pd.Timestamp('2015-01-01')
 DATA_HISTORY_START = '2010-01-01'
-exposure = {0: 1.15, 1: 1.0, 2: 0.0}
+exposure = {0: 1.0, 1: 1.0, 2: 0.0}
+CASH_SYMBOL = "BIL"
+BOND_SYMBOL = "TLT"
+CORR_WINDOW = 63
+HOLDINGS = ASSETS + [CASH_SYMBOL]
 regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "strategy_log.csv"
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
@@ -136,6 +142,17 @@ def get_current_regime():
     is_above_trend = bool(close.loc[current_date] > ma50.loc[current_date])
 
     return current_state, current_date, is_above_trend
+
+
+def bonds_protect(current_date):
+    """True when TLT's 63-day return correlation with SPY is negative,
+    i.e. bonds are currently moving against stocks and act as a hedge."""
+    start = (current_date - pd.Timedelta(days=200)).strftime('%Y-%m-%d')
+    end = (current_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    px = yf.download([SIGNAL_SYMBOL, BOND_SYMBOL], start=start, end=end, auto_adjust=True)["Close"]
+    rets = px[[SIGNAL_SYMBOL, BOND_SYMBOL]].pct_change().dropna().tail(CORR_WINDOW)
+    corr = rets[SIGNAL_SYMBOL].corr(rets[BOND_SYMBOL])
+    return bool(corr < 0), float(corr)
 
 
 def has_open_order(trading_client, symbol):
@@ -269,8 +286,8 @@ def log_positions(date, equity, gaps):
     with open(POSITIONS_LOG, "a", newline="") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["date", "equity"] + ASSETS)
-        writer.writerow([date, equity] + [round(gaps[s][1], 2) for s in ASSETS])
+            writer.writerow(["date", "equity"] + HOLDINGS)
+        writer.writerow([date, equity] + [round(gaps[s][1], 2) for s in HOLDINGS])
 
 
 def log_result(date, regime, exposure_pct, actions_summary, equity, total_before, total_target):
@@ -330,20 +347,29 @@ def main():
         print(f"Drawdown check: {recent_pct_change:+.2%} over last {DRAWDOWN_LOOKBACK_DAYS} trading days -- no override needed.\n")
 
     per_asset_target = (equity * target_exposure) / len(ASSETS)
+    hedge_ok, bond_corr = bonds_protect(current_date)
+    targets = {symbol: per_asset_target for symbol in ASSETS}
+    targets[CASH_SYMBOL] = equity * (1 - target_exposure)
+    if not hedge_ok:
+        targets[CASH_SYMBOL] += targets[BOND_SYMBOL]
+        targets[BOND_SYMBOL] = 0.0
     print(f"Account equity: ${equity:,.2f}")
-    print(f"Target per asset (equal-weighted across {len(ASSETS)}): ${per_asset_target:,.2f}\n")
+    print(f"Target per asset (equal-weighted across {len(ASSETS)}): ${per_asset_target:,.2f}")
+    print(f"Bond check: {CORR_WINDOW}-day SPY/TLT correlation {bond_corr:+.2f} -> "
+          f"{'hold TLT' if hedge_ok else 'TLT moved to ' + CASH_SYMBOL}")
+    print(f"{CASH_SYMBOL} target: ${targets[CASH_SYMBOL]:,.2f}\n")
 
     gaps = {}
-    for symbol in ASSETS:
-        gap, current_value = get_gap(trading_client, symbol, per_asset_target)
+    for symbol in HOLDINGS:
+        gap, current_value = get_gap(trading_client, symbol, targets[symbol])
         gaps[symbol] = (gap, current_value)
 
-    band_usd = per_asset_target * REBALANCE_BAND
+    band_usd = (equity / len(ASSETS)) * REBALANCE_BAND
     print(f"Rebalancing band: +/-${band_usd:,.2f} ({REBALANCE_BAND:.0%} of target) -- smaller drifts are skipped\n")
 
     actions = []
     skipped = []
-    total_before = sum(v for _, v in gaps.values())
+    total_before = sum(gaps[s][1] for s in ASSETS)
 
     print("--- Phase 1: reducing oversized positions ---")
     for symbol, (gap, current_value) in gaps.items():
@@ -353,7 +379,7 @@ def main():
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate. Wait for it to settle.")
                 continue
-            action = reduce_position(trading_client, symbol, current_value, per_asset_target)
+            action = reduce_position(trading_client, symbol, current_value, targets[symbol])
             print(f"{symbol}: {action}")
             actions.append(action)
         elif gap < 0:
@@ -367,7 +393,7 @@ def main():
             print("Buying power is still $0 -- reductions likely haven't settled yet.")
             print("Stopping here. Re-run this script in a few minutes once the sale settles,")
             print("it will skip the completed reduction and proceed straight to the buys.")
-            log_result(current_date.date(), regime_label, target_exposure, "; ".join(actions), equity, total_before, per_asset_target * len(ASSETS))
+            log_result(current_date.date(), regime_label, target_exposure, "; ".join(actions), equity, total_before, sum(targets[s] for s in ASSETS))
             print(f"\nLogged partial progress to {LOG_FILE}")
             return
 
@@ -380,6 +406,12 @@ def main():
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate.")
                 continue
+            if not DRY_RUN:
+                available = float(trading_client.get_account().buying_power) * 0.99
+                if available < band_usd:
+                    print(f"{symbol}: not enough buying power yet (${available:,.2f}) -- will buy on the next run.")
+                    continue
+                gap = min(gap, available)
             action = increase_position(trading_client, symbol, gap)
             print(f"{symbol}: {action}")
             actions.append(action)
@@ -389,7 +421,7 @@ def main():
     if skipped:
         print(f"\nSkipped (within {REBALANCE_BAND:.0%} band, not worth trading): {'; '.join(skipped)}")
 
-    total_target = per_asset_target * len(ASSETS)
+    total_target = sum(targets[s] for s in ASSETS)
     actions_summary = "; ".join(actions)
 
     if not DRY_RUN:
