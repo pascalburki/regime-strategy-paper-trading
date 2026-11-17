@@ -53,47 +53,20 @@ from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 import datetime
 import csv
 
-# ============================================================
-# CONFIG
-# ============================================================
-SIGNAL_SYMBOL = "SPY"                       # drives the regime signal
-ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]  # equal-weighted portfolio, matches validated backtest (see note above re: TLT drag)
+SIGNAL_SYMBOL = "SPY"
+ASSETS = ["SPY", "QQQ", "GLD", "TLT", "XOM"]
 WALKFORWARD_HMM_START = pd.Timestamp('2015-01-01')
 DATA_HISTORY_START = '2010-01-01'
 exposure = {0: 1.15, 1: 1.0, 2: 0.0}
 regime_names = {0: "calm", 1: "moderate", 2: "stress"}
 LOG_FILE = "strategy_log.csv"
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
-REBALANCE_BAND = 0.03  # only trade if a position drifts more than 3% off target -- avoids noise trades on tiny daily price moves
-STOP_LOSS_PCT = 0.08    # close a position if it's down more than 8% from its average entry price, regardless of regime
+REBALANCE_BAND = 0.03
+STOP_LOSS_PCT = 0.08
 
-# DRAWDOWN CIRCUIT-BREAKER (added Sep 2 2026): the regime classifier detects
-# VOLATILITY, not DIRECTION. A "calm" reading means low volatility -- it says
-# nothing about whether the market is calm-and-rising or calm-and-declining.
-# Real observed case: week of Aug 24-Sep 1 2026, regime stayed "calm" (1.2x
-# exposure) the whole time while the market quietly drifted down -0.88%,
-# which the leverage amplified to -0.97% on the live account -- underperforming
-# even the unlevered buy-and-hold benchmark. This check doesn't touch the
-# regime signal itself; it's a separate, blunt guardrail: if equity has
-# dropped more than DRAWDOWN_CAP_THRESHOLD_PCT over the last
-# DRAWDOWN_LOOKBACK_DAYS trading days, exposure is capped at 1.0x (never
-# levered up) regardless of what the regime says, until the decline stops.
 DRAWDOWN_LOOKBACK_DAYS = 5
-DRAWDOWN_CAP_THRESHOLD_PCT = 0.01  # cap leverage if down more than 1% over the lookback window
+DRAWDOWN_CAP_THRESHOLD_PCT = 0.01
 
-# DIRECTIONAL TREND FILTER (added Sep 19 2026): the drawdown circuit-breaker
-# above reacts to a decline AFTER it happens. This filter is the proactive
-# version of the same insight -- "calm" measures volatility, not direction.
-# Real live case: regime read "calm" on 18 of 19 trading days from Aug 24-
-# Sep 18 2026 while equity quietly drifted down ~1.2%, because calm alone
-# says nothing about calm-and-rising vs. calm-and-declining. Backtested
-# (see research/backtest_directional_filter.py): only capping "calm" to
-# 1.0x when SPY is also below its own 50-day moving average improved total
-# return (+345.23% vs. +322.47%) and Sharpe (1.23 vs. 1.17) with the SAME
-# max drawdown (-15.84% both) over the full walk-forward period -- a clean
-# improvement, not a tradeoff. Only "calm" changes; moderate/stress are
-# already cautious enough on their own. Affected roughly 15% of calm days
-# in the backtest.
 TREND_WINDOW = 50
 
 
@@ -159,8 +132,6 @@ def get_current_regime():
     current_state = regime_signal.iloc[-1]
     current_date = regime_signal.index[-1]
 
-    # Trend check uses only past data up to today (a rolling average is
-    # naturally walk-forward safe -- no future leakage).
     ma50 = close.rolling(window=TREND_WINDOW).mean()
     is_above_trend = bool(close.loc[current_date] > ma50.loc[current_date])
 
@@ -275,12 +246,31 @@ def check_drawdown_override(current_equity, lookback_days=DRAWDOWN_LOOKBACK_DAYS
     with open(LOG_FILE, "r") as f:
         rows = list(csv.DictReader(f))
     if len(rows) < lookback_days:
-        return False, None  # not enough history yet to evaluate
+        return False, None
 
     past_equity = float(rows[-lookback_days]["equity"])
     pct_change = (current_equity - past_equity) / past_equity
 
     return (pct_change < -threshold_pct), pct_change
+
+
+POSITIONS_LOG = "positions_log.csv"
+
+
+def already_ran(trading_date):
+    if not os.path.isfile(POSITIONS_LOG):
+        return False
+    with open(POSITIONS_LOG, "r") as f:
+        return str(trading_date) in {row["date"] for row in csv.DictReader(f)}
+
+
+def log_positions(date, equity, gaps):
+    file_exists = os.path.isfile(POSITIONS_LOG)
+    with open(POSITIONS_LOG, "a", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["date", "equity"] + ASSETS)
+        writer.writerow([date, equity] + [round(gaps[s][1], 2) for s in ASSETS])
 
 
 def log_result(date, regime, exposure_pct, actions_summary, equity, total_before, total_target):
@@ -305,11 +295,12 @@ def main():
 
     print("Determining current regime from real SPY data...")
     current_state, current_date, is_above_trend = get_current_regime()
+    if already_ran(current_date.date()):
+        print(f"Trading day {current_date.date()} was already handled. Stopping to avoid trading twice.")
+        return
     regime_label = regime_names.get(current_state, "unknown")
     target_exposure = exposure.get(current_state, 1.0)
 
-    # Directional trend filter: only "calm" is ambiguous about direction,
-    # so only "calm" gets capped here. See TREND_WINDOW comment above.
     if current_state == 0 and not is_above_trend:
         print(f"TREND FILTER: regime is 'calm' but SPY is below its {TREND_WINDOW}-day average "
               f"(calm-but-declining) -- capping exposure at 1.0x instead of {target_exposure}x.\n")
@@ -342,16 +333,11 @@ def main():
     print(f"Account equity: ${equity:,.2f}")
     print(f"Target per asset (equal-weighted across {len(ASSETS)}): ${per_asset_target:,.2f}\n")
 
-    # Compute every asset's gap first, before touching anything
     gaps = {}
     for symbol in ASSETS:
         gap, current_value = get_gap(trading_client, symbol, per_asset_target)
         gaps[symbol] = (gap, current_value)
 
-    # Rebalancing band: only act on gaps bigger than REBALANCE_BAND (3%) of
-    # target. Without this, the script chases tiny daily price drift with
-    # trades like "buy $23.08 notional SPY" -- real observed behavior on
-    # Aug 26 -- which is just noise, not a meaningful rebalance.
     band_usd = per_asset_target * REBALANCE_BAND
     print(f"Rebalancing band: +/-${band_usd:,.2f} ({REBALANCE_BAND:.0%} of target) -- smaller drifts are skipped\n")
 
@@ -359,12 +345,11 @@ def main():
     skipped = []
     total_before = sum(v for _, v in gaps.values())
 
-    # Phase 1: reductions first (deleveraging, not blocked by buying-power checks)
     print("--- Phase 1: reducing oversized positions ---")
     for symbol, (gap, current_value) in gaps.items():
         if symbol in stopped_out:
-            continue  # already handled by the stop loss this run
-        if gap < -band_usd:  # needs to shrink, beyond the band
+            continue
+        if gap < -band_usd:
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate. Wait for it to settle.")
                 continue
@@ -374,7 +359,6 @@ def main():
         elif gap < 0:
             skipped.append(f"{symbol} (${-gap:,.2f} under, within band)")
 
-    # Phase 2: re-check real buying power before attempting any buys
     if not DRY_RUN:
         account = trading_client.get_account()
         buying_power = float(account.buying_power)
@@ -383,7 +367,7 @@ def main():
             print("Buying power is still $0 -- reductions likely haven't settled yet.")
             print("Stopping here. Re-run this script in a few minutes once the sale settles,")
             print("it will skip the completed reduction and proceed straight to the buys.")
-            log_result(datetime.date.today(), regime_label, target_exposure, "; ".join(actions), equity, total_before, per_asset_target * len(ASSETS))
+            log_result(current_date.date(), regime_label, target_exposure, "; ".join(actions), equity, total_before, per_asset_target * len(ASSETS))
             print(f"\nLogged partial progress to {LOG_FILE}")
             return
 
@@ -392,7 +376,7 @@ def main():
         if symbol in stopped_out:
             print(f"{symbol}: skipping buy -- stopped out this run, waiting for tomorrow's regime check.")
             continue
-        if gap > band_usd:  # needs to grow, beyond the band
+        if gap > band_usd:
             if not DRY_RUN and has_open_order(trading_client, symbol):
                 print(f"{symbol}: already has a pending order -- skipping to avoid a duplicate.")
                 continue
@@ -409,8 +393,9 @@ def main():
     actions_summary = "; ".join(actions)
 
     if not DRY_RUN:
-        log_result(datetime.date.today(), regime_label, target_exposure, actions_summary, equity, total_before, total_target)
-        print(f"\nLogged to {LOG_FILE}")
+        log_result(current_date.date(), regime_label, target_exposure, actions_summary, equity, total_before, total_target)
+        log_positions(current_date.date(), equity, gaps)
+        print(f"\nLogged to {LOG_FILE} and {POSITIONS_LOG}")
     else:
         print("\n[DRY RUN] Nothing logged, nothing traded.")
 

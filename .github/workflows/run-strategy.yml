@@ -33,7 +33,7 @@ jobs:
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git add strategy_log.csv
+          git add strategy_log.csv positions_log.csv
           git diff --staged --quiet || git commit -m "Update strategy log $(date +'%Y-%m-%d')"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && exit 0
