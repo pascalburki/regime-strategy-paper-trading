@@ -62,3 +62,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-11-14,moderate,1.0,"close 3.05% of XOM ($19,738.78 -> target $19,137.01)",95685.05,96329.538446,95685.05000000002
 2026-11-17,moderate,1.0,,94398.15,94446.80935600001,94398.15
 2026-11-17,moderate,1.0,"close 100.00% of TLT ($19,144.62 -> target $0.00); buy $18796.94 notional BIL",93984.71,94033.396272,75187.76800000001
+2026-11-18,moderate,1.0,buy $18677.31 notional GLD; buy $625.45 notional XOM,93386.57,55669.804328,74709.25600000001
