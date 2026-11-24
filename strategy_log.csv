@@ -65,3 +65,4 @@ date,regime,target_exposure,action,equity,position_value_before,position_value_t
 2026-11-18,moderate,1.0,buy $18677.31 notional GLD; buy $625.45 notional XOM,93386.57,55669.804328,74709.25600000001
 2026-11-19,moderate,1.0,"close 3.04% of BIL ($18,803.09 -> target $18,231.67)",91158.33,72738.928023,72926.664
 2026-11-20,moderate,1.0,"close 3.43% of XOM ($18,619.34 -> target $17,980.28); close 100.00% of BIL ($18,231.47 -> target $0.00); buy $770.87 notional QQQ; buy $17980.28 notional TLT",89901.42,71482.03470399999,89901.42
+2026-11-23,moderate,1.0,buy $18409.26 notional SPY; buy $758.62 notional XOM,92046.28,72966.000672,92046.28
